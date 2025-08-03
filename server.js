@@ -125,7 +125,8 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       fr: { name: 'bonjour', code: 'fr' },
       de: { name: 'hallo', code: 'de' },
       pt: { name: 'ola', code: 'pt' },
-      tr: { name: 'merhaba', code: 'tr' }
+      tr: { name: 'merhaba', code: 'tr' },
+      it: { name: 'ciao', code: 'it' }
     };
 
     const selected = templateMap[lang] || templateMap['en'];
