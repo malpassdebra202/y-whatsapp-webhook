@@ -128,7 +128,7 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   hello_pt: { name: 'ola', code: 'pt' },
   hello_tr: { name: 'merhaba', code: 'tr' },
 
-  ready_en: { name: 'ready', code: 'en' },
+  ready_en: { name: 'ready_en', code: 'en' },
   ready_fr: { name: 'ready_fr', code: 'fr' },
   ready_it: { name: 'ready_it', code: 'it' },
   ready_es: { name: 'ready_es', code: 'es' },
