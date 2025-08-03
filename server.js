@@ -55,33 +55,45 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ✅ Telegram → Send WhatsApp message via /sendwa command
+// ✅ Telegram → Send WhatsApp message via /sendwa command
 app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   const body = req.body;
   const messageText = body?.message?.text;
-  const chatId = body?.message?.chat.id;
+  const chatId = body?.message?.chat?.id;
 
   if (!messageText?.startsWith('/sendwa')) return res.sendStatus(200);
 
   const parts = messageText.split(' ');
   const number = parts[1];
+  const lang = parts[2]?.toLowerCase() || 'en';
 
   if (!number) {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: "❗️ Usage: /sendwa +2126xxxxxx"
+      text: "❗️ Usage: /sendwa +2126xxxxxx [lang]\nExample: /sendwa +212612345678 es"
     });
     return res.sendStatus(200);
   }
 
+  // ✅ Language to template map
+  const templateMap = {
+    en: { name: 'hello', code: 'en' },
+    es: { name: 'hola', code: 'es' },
+    fr: { name: 'bonjour', code: 'fr' },
+    de: { name: 'hallo', code: 'de' },
+    pt: { name: 'ola', code: 'pt' }
+  };
+
+  const selected = templateMap[lang] || templateMap['en'];
+
   try {
-    // Send template message
     const waResp = await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
       messaging_product: "whatsapp",
       to: number,
       type: "template",
       template: {
-        name: "hello_world",
-        language: { code: "en_US" }
+        name: selected.name,
+        language: { code: selected.code }
       }
     }, {
       headers: {
@@ -90,11 +102,12 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       }
     });
 
-    console.log('✅ WhatsApp API template response:', waResp.data);
+    console.log(`✅ Sent template '${selected.name}' to ${number}`);
 
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: `✅ Sent WhatsApp template to ${number}`
+      text: `✅ Sent WhatsApp template *${selected.name}* (${selected.code}) to ${number}`,
+      parse_mode: "Markdown"
     });
   } catch (err) {
     const errorMsg = err?.response?.data?.error?.message || err.message;
