@@ -3,13 +3,16 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 
 const app = express();
+
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'wa_secret_123';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8330614857:AAFTdO4gueQlSM0zsuQApE_N7KxW1rhrP0w';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '-4617632325';
+const WA_ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN || 'YOUR_WHATSAPP_ACCESS_TOKEN';
+const WA_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || '656578180881838';
 
 app.use(bodyParser.json());
 
-// Webhook verification (GET)
+// ✅ WhatsApp Webhook verification (GET)
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -23,7 +26,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// Handle WhatsApp messages (POST)
+// ✅ Handle incoming WhatsApp replies → forward to Telegram
 app.post('/webhook', async (req, res) => {
   const data = req.body;
 
@@ -35,21 +38,67 @@ app.post('/webhook', async (req, res) => {
     if (phone && text) {
       const formattedMessage = `From +${phone}:\n${text}`;
 
-      const telegramURL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
       console.log('Sending to Telegram:', formattedMessage);
 
-      const response = await axios.post(telegramURL, {
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         chat_id: TELEGRAM_CHAT_ID,
         text: formattedMessage
       });
-
-      console.log('Telegram response:', response.data);
     } else {
       console.log('No valid message to forward.');
     }
   } catch (err) {
     console.error('❌ Error sending to Telegram:', err?.response?.data || err.message || err);
+  }
+
+  res.sendStatus(200);
+});
+
+// ✅ Telegram → Send WhatsApp message via /sendwa command
+app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
+  const body = req.body;
+  const messageText = body?.message?.text;
+  const chatId = body?.message?.chat.id;
+
+  if (!messageText?.startsWith('/sendwa')) {
+    return res.sendStatus(200);
+  }
+
+  const parts = messageText.split(' ');
+  const number = parts[1];
+  const waMessage = parts.slice(2).join(' ');
+
+  if (!number || !waMessage) {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text: "❗️Usage:\n/sendwa +2126xxxxxxx Your message"
+    });
+    return res.sendStatus(200);
+  }
+
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
+      messaging_product: "whatsapp",
+      to: number,
+      type: "text",
+      text: { body: waMessage }
+    }, {
+      headers: {
+        Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text: `✅ Sent WhatsApp message to ${number}:\n${waMessage}`
+    });
+  } catch (err) {
+    console.error('❌ Error sending WhatsApp message:', err?.response?.data || err.message);
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text: `❌ Failed to send message:\n${err?.response?.data?.error?.message || err.message}`
+    });
   }
 
   res.sendStatus(200);
