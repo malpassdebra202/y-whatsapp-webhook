@@ -60,28 +60,29 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   const messageText = body?.message?.text;
   const chatId = body?.message?.chat.id;
 
-  if (!messageText?.startsWith('/sendwa')) {
-    return res.sendStatus(200);
-  }
+  if (!messageText?.startsWith('/sendwa')) return res.sendStatus(200);
 
   const parts = messageText.split(' ');
   const number = parts[1];
-  const waMessage = parts.slice(2).join(' ');
 
-  if (!number || !waMessage) {
+  if (!number) {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: "❗️Usage:\n/sendwa +2126xxxxxxx Your message"
+      text: "❗️ Usage: /sendwa +2126xxxxxx"
     });
     return res.sendStatus(200);
   }
 
   try {
-    await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
+    // Send template message
+    const waResp = await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
       messaging_product: "whatsapp",
       to: number,
-      type: "text",
-      text: { body: waMessage }
+      type: "template",
+      template: {
+        name: "hello_world",
+        language: { code: "en_US" }
+      }
     }, {
       headers: {
         Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
@@ -89,15 +90,19 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       }
     });
 
+    console.log('✅ WhatsApp API template response:', waResp.data);
+
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: `✅ Sent WhatsApp message to ${number}:\n${waMessage}`
+      text: `✅ Sent WhatsApp template to ${number}`
     });
   } catch (err) {
-    console.error('❌ Error sending WhatsApp message:', err?.response?.data || err.message);
+    const errorMsg = err?.response?.data?.error?.message || err.message;
+    console.error('❌ WhatsApp template send failed:', errorMsg);
+
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: `❌ Failed to send message:\n${err?.response?.data?.error?.message || err.message}`
+      text: `❌ Failed to send WhatsApp message:\n${errorMsg}`
     });
   }
 
