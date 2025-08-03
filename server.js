@@ -4,29 +4,29 @@ const axios = require('axios');
 
 const app = express();
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'wa_secret_123';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8330614857:AAFTdO4gueQlSM0zsuQApE_N7KxW1rhrP0w';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '-4617632325';
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'VERIFY_TOKEN';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'TELEGRAM_BOT_TOKEN';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'TELEGRAM_CHAT_ID';
 const WA_ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN || 'YOUR_WHATSAPP_ACCESS_TOKEN';
-const WA_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || '656578180881838';
+const WA_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || 'PHONE_NUMBER_ID';
 
 app.use(bodyParser.json());
 
-// ✅ WhatsApp Webhook verification (GET)
+// ✅ Webhook verification
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('Webhook verified');
+    console.log('✅ Webhook verified');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// ✅ Handle incoming WhatsApp replies → forward to Telegram
+// ✅ WhatsApp → Telegram
 app.post('/webhook', async (req, res) => {
   const data = req.body;
 
@@ -37,25 +37,21 @@ app.post('/webhook', async (req, res) => {
 
     if (phone && text) {
       const formattedMessage = `From +${phone}:\n${text}`;
-
-      console.log('Sending to Telegram:', formattedMessage);
+      console.log('📩 Incoming from WhatsApp:', formattedMessage);
 
       await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         chat_id: TELEGRAM_CHAT_ID,
         text: formattedMessage
       });
-    } else {
-      console.log('No valid message to forward.');
     }
   } catch (err) {
-    console.error('❌ Error sending to Telegram:', err?.response?.data || err.message || err);
+    console.error('❌ Telegram forward error:', err?.response?.data || err.message);
   }
 
   res.sendStatus(200);
 });
 
-// ✅ Telegram → Send WhatsApp message via /sendwa command
-// ✅ Telegram → Send WhatsApp message via /sendwa command
+// ✅ Telegram → /sendwa
 app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   const body = req.body;
   const messageText = body?.message?.text;
@@ -63,27 +59,35 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
 
   if (!messageText?.startsWith('/sendwa')) return res.sendStatus(200);
 
-  const parts = messageText.split(' ');
+  const parts = messageText.trim().split(/\s+/);
   const number = parts[1];
-  const lang = parts[2]?.toLowerCase() || 'en';
+  const lang = (parts[2] || 'en').toLowerCase();
 
-  if (!number) {
+  // ❌ Block if message has more than 3 parts (e.g. custom text)
+  if (parts.length > 3) {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
-      text: "❗️ Usage: /sendwa +2126xxxxxx [lang]\nExample: /sendwa +212612345678 es"
+      text: "⚠️ Usage: /sendwa +2126xxxxxx [lang]\nOnly language allowed — no custom text."
     });
     return res.sendStatus(200);
   }
 
-  // ✅ Language to template map
+  if (!number) {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text: "❗️ Usage: /sendwa +2126xxxxxx [lang]\nExample: /sendwa +212612345678 fr"
+    });
+    return res.sendStatus(200);
+  }
+
+  // ✅ Template map
   const templateMap = {
     en: { name: 'hello', code: 'en' },
     es: { name: 'hola', code: 'es' },
     fr: { name: 'bonjour', code: 'fr' },
     de: { name: 'hallo', code: 'de' },
     pt: { name: 'ola', code: 'pt' },
-    tr: { name: 'merhaba', code: 'tr' }  // ← add template called "merhaba" in Turkish
-
+    tr: { name: 'merhaba', code: 'tr' }
   };
 
   const selected = templateMap[lang] || templateMap['en'];
@@ -104,16 +108,16 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       }
     });
 
-    console.log(`✅ Sent template '${selected.name}' to ${number}`);
+    console.log(`✅ Sent '${selected.name}' (${selected.code}) to ${number}`);
 
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
       text: `✅ Sent WhatsApp template *${selected.name}* (${selected.code}) to ${number}`,
-      parse_mode: "Markdown"
+      parse_mode: 'Markdown'
     });
   } catch (err) {
     const errorMsg = err?.response?.data?.error?.message || err.message;
-    console.error('❌ WhatsApp template send failed:', errorMsg);
+    console.error('❌ WhatsApp send failed:', errorMsg);
 
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: chatId,
@@ -125,4 +129,4 @@ app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Webhook listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
