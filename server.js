@@ -35,15 +35,21 @@ app.post('/webhook', async (req, res) => {
     if (phone && text) {
       const formattedMessage = `From +${phone}:\n${text}`;
 
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const telegramURL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+      console.log('Sending to Telegram:', formattedMessage);
+
+      const response = await axios.post(telegramURL, {
         chat_id: TELEGRAM_CHAT_ID,
         text: formattedMessage
       });
 
-      console.log('✅ Message sent to Telegram:\n', formattedMessage);
+      console.log('Telegram response:', response.data);
+    } else {
+      console.log('No valid message to forward.');
     }
-  } catch (error) {
-    console.error('❌ Error processing message:', error);
+  } catch (err) {
+    console.error('❌ Error sending to Telegram:', err?.response?.data || err.message || err);
   }
 
   res.sendStatus(200);
