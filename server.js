@@ -26,7 +26,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// ✅ WhatsApp → Telegram
+// ✅ WhatsApp → Telegram forward
 app.post('/webhook', async (req, res) => {
   const data = req.body;
 
@@ -51,79 +51,125 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-// ✅ Telegram → /sendwa
+// ✅ Telegram → send WhatsApp TEXT message
 app.post(`/telegram/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   const body = req.body;
   const messageText = body?.message?.text;
   const chatId = body?.message?.chat?.id;
 
-  if (!messageText?.startsWith('/sendwa')) return res.sendStatus(200);
+  if (!messageText) return res.sendStatus(200);
 
-  const parts = messageText.trim().split(/\s+/);
-  const number = parts[1];
-  const lang = (parts[2] || 'en').toLowerCase();
+  // --- /sendwa → plain WhatsApp message
+  if (messageText.startsWith('/sendwa')) {
+    const parts = messageText.trim().split(/\s+/);
+    const number = parts[1];
+    const textMsg = parts.slice(2).join(' ');
 
-  // ❌ Block if message has more than 3 parts (e.g. custom text)
-  if (parts.length > 3) {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId,
-      text: "⚠️ Usage: /sendwa +2126xxxxxx [lang]\nOnly language allowed — no custom text."
-    });
+    if (!number || !textMsg) {
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: "❗️ Usage: /sendwa +2126xxxxxx Your message here"
+      });
+      return res.sendStatus(200);
+    }
+
+    try {
+      const waResp = await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
+        messaging_product: "whatsapp",
+        to: number,
+        type: "text",
+        text: { body: textMsg }
+      }, {
+        headers: {
+          Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`✅ Sent WhatsApp text to ${number}`);
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: `✅ Sent WhatsApp message to ${number}`
+      });
+    } catch (err) {
+      const errorMsg = err?.response?.data?.error?.message || err.message;
+      console.error('❌ WhatsApp text send failed:', errorMsg);
+
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: `❌ Failed to send message:\n${errorMsg}`
+      });
+    }
+
     return res.sendStatus(200);
   }
 
-  if (!number) {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId,
-      text: "❗️ Usage: /sendwa +2126xxxxxx [lang]\nExample: /sendwa +212612345678 fr"
-    });
+  // --- /sendtemplate → template message
+  if (messageText.startsWith('/sendtemplate')) {
+    const parts = messageText.trim().split(/\s+/);
+    const number = parts[1];
+    const lang = (parts[2] || 'en').toLowerCase();
+
+    if (!number || parts.length > 3) {
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: "❗️ Usage: /sendtemplate +2126xxxxxx [lang]\nExample: /sendtemplate +905xxx tr"
+      });
+      return res.sendStatus(200);
+    }
+
+    // 🧩 Template map
+    const templateMap = {
+      en: { name: 'hello', code: 'en' },
+      es: { name: 'hola', code: 'es' },
+      fr: { name: 'bonjour', code: 'fr' },
+      de: { name: 'hallo', code: 'de' },
+      pt: { name: 'ola', code: 'pt' },
+      tr: { name: 'merhaba', code: 'tr' }
+    };
+
+    const selected = templateMap[lang] || templateMap['en'];
+
+    try {
+      const waResp = await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
+        messaging_product: "whatsapp",
+        to: number,
+        type: "template",
+        template: {
+          name: selected.name,
+          language: { code: selected.code }
+        }
+      }, {
+        headers: {
+          Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`✅ Sent template '${selected.name}' (${selected.code}) to ${number}`);
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: `✅ Sent WhatsApp template *${selected.name}* (${selected.code}) to ${number}`,
+        parse_mode: 'Markdown'
+      });
+    } catch (err) {
+      const errorMsg = err?.response?.data?.error?.message || err.message;
+      console.error('❌ Template send failed:', errorMsg);
+
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: `❌ Failed to send WhatsApp template:\n${errorMsg}`
+      });
+    }
+
     return res.sendStatus(200);
   }
 
-  // ✅ Template map
-  const templateMap = {
-    en: { name: 'hello', code: 'en' },
-    es: { name: 'hola', code: 'es' },
-    fr: { name: 'bonjour', code: 'fr' },
-    de: { name: 'hallo', code: 'de' },
-    pt: { name: 'ola', code: 'pt' },
-    tr: { name: 'merhaba', code: 'tr' }
-  };
-
-  const selected = templateMap[lang] || templateMap['en'];
-
-  try {
-    const waResp = await axios.post(`https://graph.facebook.com/v18.0/${WA_PHONE_NUMBER_ID}/messages`, {
-      messaging_product: "whatsapp",
-      to: number,
-      type: "template",
-      template: {
-        name: selected.name,
-        language: { code: selected.code }
-      }
-    }, {
-      headers: {
-        Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    console.log(`✅ Sent '${selected.name}' (${selected.code}) to ${number}`);
-
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId,
-      text: `✅ Sent WhatsApp template *${selected.name}* (${selected.code}) to ${number}`,
-      parse_mode: 'Markdown'
-    });
-  } catch (err) {
-    const errorMsg = err?.response?.data?.error?.message || err.message;
-    console.error('❌ WhatsApp send failed:', errorMsg);
-
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId,
-      text: `❌ Failed to send WhatsApp message:\n${errorMsg}`
-    });
-  }
+  // If command doesn't match
+  await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    chat_id: chatId,
+    text: "⚠️ Unknown command. Use /sendwa or /sendtemplate."
+  });
 
   res.sendStatus(200);
 });
